@@ -1,38 +1,22 @@
 from django.db import models
 from django.db.models import DO_NOTHING
 
+from workflows.models import WorkflowInitialization, ContractWorkflowProgress, WorkflowTask
+
 
 class StatusEnum(models.TextChoices):
-    NEW = (
-        "NEW", "New"
-    )
-    DRAFT = (
-        "DFT", "Draft"
-    )
-    WIP = (
-        "WIP", "Work in progress"
-    )
-    CLOSED = (
-        "CLO", "Closed"
-    )
+    NEW = ("NEW", "New")
+    DRAFT = ("DFT", "Draft")
+    WIP = ("WIP", "Work in progress")
+    CLOSED = ("CLO", "Closed")
 
 
 class ProjectTypeEnum(models.TextChoices):
-    INVEST = (
-        "invest", "Investment"
-    )
-    IT = (
-        "IT", "Information Technology"
-    )
-    CAPITAL = (
-        "cap", "Capital Construction"
-    )
-    EXP = (
-        "exp", "Expenses"
-    )
-    SERVICE = (
-        "service", "Service"
-    )
+    INVEST = ("invest", "Investment")
+    IT = ("IT", "Information Technology")
+    CAPITAL = ("cap", "Capital Construction")
+    EXP = ("exp", "Expenses")
+    SERVICE = ("service", "Service")
 
 
 class Company(models.Model):
@@ -76,5 +60,45 @@ class Contract(models.Model):
     addendum = models.CharField(max_length=300, null=True, blank=True)
     reference = models.CharField(max_length=300, null=True, blank=True)
 
+    workflow = models.ForeignKey('workflows.Workflow', on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name="contracts", verbose_name="Workflow")  # Lazy reference
+    current_step = models.ForeignKey('workflows.WorkflowStep', on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name="current_contracts",
+                                     verbose_name="Current Workflow Step")  # Lazy reference
+
     def __str__(self):
         return f"{self.number}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self.initialize_workflow()
+
+    def initialize_workflow(self):
+        """
+        Initialize the workflow if the contract meets the initialization criteria.
+        """
+        if not self.workflow or not self.current_step:
+            initialization = WorkflowInitialization.objects.filter(workflow=self.workflow).first()
+            if initialization and initialization.can_initialize(self):
+                # Get the initial step (lowest sequence number)
+                initial_step = self.workflow.steps.order_by('sequence').first()
+                if initial_step:
+                    self.current_step = initial_step
+                    self.current_step.status = 'open'
+                    self.save()
+
+                    # Create ContractWorkflowProgress
+                    ContractWorkflowProgress.objects.create(
+                        contract=self,
+                        step=initial_step,
+                        status='open',
+                        assigned_user=initial_step.assigned_user
+                    )
+
+                    # Create initial task for the first step
+                    WorkflowTask.objects.create(
+                        contract=self,
+                        step=initial_step,
+                        assigned_user=initial_step.assigned_user,
+                        description=f"Complete the task for step {initial_step.name}"
+                    )

@@ -1,195 +1,69 @@
-from xml.dom import ValidationErr
-
 from django.db import models
-# from django.contrib.auth.models import Group
-# from django.core.exceptions import ValidationError
-"""Minimal additional imports"""
-# from accounts.models import Company
-# from number_composition import SubClass
-# from project.models import Project
-# from systems.models import ApprovalCode, BaseClass, Discipline, StatusCode, TransmittalCode, TypeCode
-# from users.model import User
+from django.contrib.auth.models import User
 
 
-class BaseClassEnum(models.TextChoices):
-    CM = (
-        "CM", "Contracts Management"
-    )
-    PM = "PM", "Project Management"
-
-
-class ProjectEnum(models.TextChoices):
-    ABC = (
-        "ABC", "Initial Test Project"
-    )
-    SK1 = (
-        "SK1", "Second Test Project"
-    )
-
-
-class CompletedByEnum(models.TextChoices):
-    ALL = (
-        "all", "all persons to commit"
-    )
-    ONE = (
-        "one", "one person enough to commit"
-    )
-    ALR = (
-        "alr", "all responsible to commit"
-    )
-    ENG = (
-        "eng", "one responsible to commit"
-    )
-
-
-class WorkflowRole(models.TextChoices):
-    APPROVAL = (
-        "APPROVAL", "Approval"
-    )
-    CHECKER = (
-        "CHECKER", "Checker"
-    )
-    CREATOR = (
-        "CREATOR", "Creator"
-    )
-    REVIEWER = (
-        "REVIEWER", "Reviewer"
-    )
-
-
-class StepStatusEnum(models.TextChoices):
-    IN_PROGRESS = (
-        "WIP", "Work in Progress"
-    )
-    IS_FINISHED = (
-        "FIN", "Finished"
-    )
-
-
-class StatusCodeEnum(models.TextChoices):
-    NEW = (
-        "NEW", "New"
-    )
-    OUT = (
-        "OUT", "Outstanding"
-    )
-    CLOSED = (
-        "CLO", "Closed"
-    )
-    REJECTED = (
-        "REJ", "Rejected"
-    )
-
-
-class WorkflowItem(models.Model):
-    class Meta:
-        verbose_name = "WFL Item"
-        verbose_name_plural = "WFL Items"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["base_class", "workflow"],
-                name="base_class_wf_item_uniq",
-            ),
-            models.UniqueConstraint(
-                fields=["project", "workflow"],
-                name="project_wf_item_uniq",
-            )
-        ]
-    base_class = models.CharField(max_length=30, choices=BaseClassEnum.choices)
-    project = models.CharField(max_length=3, choices=ProjectEnum.choices)
-    workflow = models.CharField(max_length=100, verbose_name="workflow item name")
-    description = models.TextField(null=True, blank=True)
-    is_workflow = models.BooleanField(default=False)
-    active = models.BooleanField(default=True)
+class Workflow(models.Model):
+    name = models.CharField(max_length=255, verbose_name="Workflow Name")
+    description = models.TextField(null=True, blank=True, verbose_name="Workflow Description")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.workflow}"
-
-
-class WorkflowSetup(models.Model):
-    class Meta:
-        verbose_name = "WFL set-up"
-        verbose_name_plural = "WFL set-ups"
-
-    workflow = models.ForeignKey(WorkflowItem, on_delete=models.CASCADE, related_name="wf_setups")
-
-    def __str__(self):
-        return f"{self.workflow}"
-
-    # def save(self, **kwargs):
-    #     self.clean()
-    #     super().save(**kwargs)
-    #
-    # def clean(self):
-    #     super().clean()
-    #     self.workflow: WorkflowItem
-    #
-    #     self.workflow.is_workflow = True
-    #     self.workflow.save()
-
-
+        return self.name
 
 
 class WorkflowStep(models.Model):
-    class Meta:
-        verbose_name = "WFL step"
-        verbose_name_plural = "WFL steps"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["workflow_setup", "sequence_nr"],
-                name="wf_setup_sequence_nr_uniq",
-            )
-        ]
-
-    workflow = models.ForeignKey(WorkflowItem, on_delete=models.CASCADE, related_name="wf_steps")
-    workflow_setup = models.ForeignKey(WorkflowSetup, on_delete=models.CASCADE, related_name="wf_setup_steps")
-    sequence_nr = models.IntegerField()
-    completed_by = models.CharField(max_length=20, choices=CompletedByEnum.choices)
-    is_multiple_persons = models.BooleanField(default=False)
-    reaction_time = models.IntegerField(blank=True, null=True)
-    status_code = models.CharField(max_length=30, choices=StatusCodeEnum.choices)
-    disable_comments = models.BooleanField(default=False)
-
-    # def save(self, **kwargs):
-    #     self.clean()
-    #     super().save(**kwargs)
-    #
-    # def clean(self):
-    #     super().clean()
-    #     workflow_item = WorkflowItem.objects.select_related(
-    #         "base_class", "project"
-    #     ).get(pk=self.workflow.pk)
-    #     workflow_setup_item = WorkflowItem.objects.select_related(
-    #         "base_class", "project"
-    #     ).get(pk=self.workflow_setup.workflow.pk)
-    #
-    #     if workflow_item.project != workflow_setup_item.project:
-    #         raise ValidationErr("Step workflow and Setup Workflow must be unique")
+    workflow = models.ForeignKey(Workflow, on_delete=models.CASCADE, related_name="steps")
+    name = models.CharField(max_length=255, verbose_name="Step Name")
+    description = models.TextField(null=True, blank=True, verbose_name="Step Description")
+    sequence = models.PositiveIntegerField(verbose_name="Step Sequence Number")
+    assigned_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Assigned User")
+    status = models.CharField(max_length=10, choices=[('open', 'Open'), ('closed', 'Closed')], default='open', verbose_name="Step Status")
 
     def __str__(self):
-        return f"{self.workflow}"
+        return f"{self.workflow.name} - {self.name}"
 
 
-class StepParameter(models.Model):
-    pass
+class WorkflowStepReturnCode(models.Model):
+    step = models.ForeignKey(WorkflowStep, on_delete=models.CASCADE, related_name="return_codes")
+    code = models.CharField(max_length=10, verbose_name="Return Code")
+    description = models.TextField(null=True, blank=True, verbose_name="Return Code Description")
+    next_step = models.ForeignKey(WorkflowStep, on_delete=models.SET_NULL, null=True, blank=True, related_name="previous_return_codes", verbose_name="Next Step")
+
+    def __str__(self):
+        return f"{self.code} - {self.step.name} -> {self.next_step.name if self.next_step else 'End'}"
 
 
-class StepAction(models.Model):
-    pass
+class WorkflowInitialization(models.Model):
+    workflow = models.ForeignKey(Workflow, on_delete=models.CASCADE, related_name="initializations")
+    required_project_type = models.CharField(max_length=50, choices=[('IT', 'Information Technology'), ('CAP', 'Capital Construction')], verbose_name="Required Project Type")
+    required_contract_status = models.CharField(max_length=50, choices=[('NEW', 'New'), ('WIP', 'Work in progress'), ('CLO', 'Closed')], verbose_name="Required Contract Status")
+
+    def __str__(self):
+        return f"Initialization for {self.workflow.name}"
+
+    def can_initialize(self, contract):
+        return contract.project.type == self.required_project_type and contract.status == self.required_contract_status
 
 
-class StepControl(models.Model):
-    pass
+class ContractWorkflowProgress(models.Model):
+    contract = models.ForeignKey('contract.Contract', on_delete=models.CASCADE, related_name="workflow_progress")  # Lazy reference
+    step = models.ForeignKey(WorkflowStep, on_delete=models.SET_NULL, null=True, blank=True, related_name="contract_progress")
+    status = models.CharField(max_length=10, choices=[('open', 'Open'), ('closed', 'Closed')], default='open')
+    return_code = models.CharField(max_length=10, null=True, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    assigned_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="workflow_progress_steps")
+
+    def __str__(self):
+        return f"{self.contract.number} - {self.step.name if self.step else 'No Step'} - {self.status}"
 
 
-class WorkflowInbox(models.Model):
-    pass
+class WorkflowTask(models.Model):
+    contract = models.ForeignKey('contract.Contract', on_delete=models.CASCADE, related_name="workflow_tasks")  # Lazy reference
+    step = models.ForeignKey(WorkflowStep, on_delete=models.CASCADE, related_name="tasks")
+    assigned_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="workflow_tasks")
+    description = models.TextField(verbose_name="Task Description")
+    completed = models.BooleanField(default=False)
 
-
-class Initialization(models.Model):
-    pass
-
-
-class RevisionWorkflow(models.Model):
-    pass
-
+    def __str__(self):
+        return f"Task for {self.assigned_user.username} - {self.step.name} - {self.contract.number}"
